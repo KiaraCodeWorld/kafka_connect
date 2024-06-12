@@ -1,0 +1,36 @@
+from kafka import KafkaConsumer
+import os
+
+# Set the environment variable for JAAS configuration
+os.environ['KAFKA_OPTS'] = '-Djava.security.auth.login.config=/path/to/your/jaas.conf'
+
+# Create a KafkaConsumer instance
+consumer = KafkaConsumer(
+    bootstrap_servers='your_broker_list',
+    group_id='your_group_id',
+    auto_offset_reset='earliest',
+    security_protocol='SASL_SSL',
+    sasl_mechanism='PLAIN',
+    sasl_plain_username='your_username',
+    sasl_plain_password='your_password'
+)
+
+# Now you can start consuming messages
+for message in consumer:
+    print(message)
+
+==========
+https://www.linkedin.com/pulse/use-case-kerberos-enabled-kafka-producer-using-python-weichberger/ 
+
+https://hackernoon.com/how-to-authenticate-kafka-using-kerberos-sasl-spark-and-jupyter-notebook-rwal35bx
+
+https://gist.github.com/asdaraujo/2c7d8c1119a45a4e7bbaa3e068655c84
+
+krb from python
+
+https://pypi.org/project/krbticket/
+https://python-krb5ticket.readthedocs.io/en/latest/index.html
+
+
+
+
