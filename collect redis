@@ -1,0 +1,328 @@
+"""
+write python code with good comments and proper standards - 
+which will 
+0. setup the env using dotenv and get variables for redis and elastic connections / credentias
+1. collect the response from the redisstream "collector" -
+2. add try / catch for exception handling 
+3. read the messages and using the "_id" as column key - will upsert records into elasticSearch index 	
+"""
+
+
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_STREAM=collector
+
+ES_HOST=localhost
+ES_PORT=9200
+ES_INDEX=my_index
+ES_USERNAME=your_username
+ES_PASSWORD=your_password
+
+import os
+import redis
+from elasticsearch import Elasticsearch, helpers
+import json
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Function to read messages from Redis stream and upsert into Elasticsearch
+def read_from_redis_and_upsert_to_es(redis_host, redis_port, redis_stream, es_host, es_port, es_index, es_username, es_password):
+    try:
+        # Initialize Redis client
+        redis_client = redis.StrictRedis(host=redis_host, port=redis_port, decode_responses=True)
+        
+        # Initialize Elasticsearch client with basic authentication
+        es_client = Elasticsearch(
+            [{'host': es_host, 'port': es_port}],
+            http_auth=(es_username, es_password)
+        )
+
+        # Variable to keep track of the last message ID processed
+        last_id = '0-0'
+        
+        while True:
+            try:
+                # Read messages from Redis stream
+                response = redis_client.xread({redis_stream: last_id}, block=5000, count=10)
+                
+                # Check if there are messages
+                if response:
+                    # Iterate over the response
+                    for stream, messages in response:
+                        for message_id, message in messages:
+                            # Process each message
+                            process_message(es_client, es_index, message)
+                            last_id = message_id
+            
+            except redis.RedisError as e:
+                print(f"Redis error: {e}")
+                break
+            
+            except Exception as e:
+                print(f"Unexpected error: {e}")
+                break
+
+    except Exception as e:
+        print(f"Failed to initialize Redis or Elasticsearch: {e}")
+
+# Function to process each message and upsert into Elasticsearch
+def process_message(es_client, es_index, message):
+    try:
+        # Extract the "_id" from the message to use as the document ID
+        doc_id = message.get('_id')
+        if not doc_id:
+            raise ValueError("Message does not contain '_id' field")
+
+        # Upsert the document into Elasticsearch
+        es_client.index(index=es_index, id=doc_id, body=message)
+
+    except Exception as e:
+        print(f"Failed to upsert document: {e}")
+
+if __name__ == "__main__":
+    # Load configuration from environment variables
+    redis_host = os.getenv('REDIS_HOST')
+    redis_port = int(os.getenv('REDIS_PORT'))
+    redis_stream = os.getenv('REDIS_STREAM')
+    
+    es_host = os.getenv('ES_HOST')
+    es_port = int(os.getenv('ES_PORT'))
+    es_index = os.getenv('ES_INDEX')
+    es_username = os.getenv('ES_USERNAME')
+    es_password = os.getenv('ES_PASSWORD')
+
+    # Start the process
+    read_from_redis_and_upsert_to_es(redis_host, redis_port, redis_stream, es_host, es_port, es_index, es_username, es_password)
+
+
+================
+
+import os
+import json
+import redis
+from dotenv import load_dotenv
+from elasticsearch import Elasticsearch
+from elasticsearch.helpers import bulk
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Get Redis connection details from environment variables
+REDIS_HOST = os.environ.get('REDIS_HOST')
+REDIS_PORT = int(os.environ.get('REDIS_PORT'))
+REDIS_PASSWORD = os.environ.get('REDIS_PASSWORD')
+
+# Get Elasticsearch connection details from environment variables
+ES_HOST = os.environ.get('ES_HOST')
+ES_PORT = int(os.environ.get('ES_PORT'))
+ES_USERNAME = os.environ.get('ES_USERNAME')
+ES_PASSWORD = os.environ.get('ES_PASSWORD')
+
+# Set up Redis connection
+redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PASSWORD)
+
+# Set up Elasticsearch connection
+es_client = Elasticsearch(
+   hosts=[{'host': ES_HOST, 'port': ES_PORT}],
+   http_auth=(ES_USERNAME, ES_PASSWORD),
+)
+
+
+def consume_redis_stream(stream_name):
+   """
+   Consume messages from a Redis stream and upsert records into Elasticsearch.
+
+   Args:
+       stream_name (str): The name of the Redis stream to consume.
+   """
+   try:
+       stream = redis_client.stream(stream_name)
+       records = stream.read(count=1000)  # Consume up to 1000 records
+
+       if records:
+           actions = []
+           for record in records:
+               message_id, data = record
+               message_data = json.loads(data[b'values'][0])
+
+               action = {
+                   "_op_type": "update",
+                   "_index": "collector",
+                   "_id": message_data['_id'],
+                   "doc": message_data,
+                   "doc_as_upsert": True,
+               }
+               actions.append(action)
+
+           bulk(es_client, actions)
+           stream.delete(*[record[0] for record in records])  # Delete processed records
+   except Exception as e:
+       print(f"Error occurred: {e}")
+
+
+if __name__ == "__main__":
+   stream_name = "collector"
+   consume_redis_stream(stream_name)
+
+=============
+
+import os
+from dotenv import load_dotenv
+import json
+from elasticsearch import Elasticsearch
+import redis
+
+# Load environment variables from a `.env` file
+load_dotenv()
+
+# Redis connection details from environment variables
+REDIS_HOST = os.getenv('REDIS_HOST')
+REDIS_PORT = int(osgetenv('REDIS_PORT'))
+REDIS_PASSWORD = os.getenv('REDIS_PASSWORD')
+
+# Elasticsearch connection details from environment variables
+ES_HOST = os.getenv('ELASTICSEARCH_HOST')
+ES_PORT = int(osgetenv('ELASTICSEARCH_PORT'))
+
+# Redis stream name
+SOURCE_STREAM = "collector"
+
+# Elasticsearch index name
+INDEX_NAME = "gwas_collector_data"
+
+
+def connect_to_redis():
+    """
+    Establishes a connection to the Redis server.
+
+    Returns:
+        A Redis client object.
+    """
+    try:
+        redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=REDIS_PASSWORD)
+        return redis_client
+    except redis.exceptions.ConnectionError as e:
+        print(f"Error connecting to Redis: {e}")
+        exit(1)
+
+
+def connect_to_elasticsearch():
+    """
+    Establishes a connection to the Elasticsearch cluster.
+
+    Returns:
+        An Elasticsearch client object.
+    """
+    try:
+        es_client = Elasticsearch([{'host': ES_HOST, 'port': ES_PORT}])
+        return es_client
+    except Exception as e:
+        print(f"Error connecting to Elasticsearch: {e}")
+        exit(1)
+
+
+def process_messages(redis_client, es_client):
+    """
+    Processes messages from the Redis stream and upserts them into the Elasticsearch index.
+
+    Args:
+        redis_client: A Redis client object.
+        es_client: An Elasticsearch client object.
+    """
+    try:
+        # Use XRANGE to read all messages from the stream
+        messages = list(redis_client.xrange(SOURCE_STREAM, min='-'))
+        for message_id, message_data in messages:
+            data = json.loads(message_data.decode('utf-8'))
+            _id = data.get('_id')
+            if not _id:
+                print(f"Missing '_id' field in message: {message_data}")
+                continue
+
+            # Use 'update' API for upsert (create or update)
+            es_client.update(
+                index=INDEX_NAME,
+                id=_id,
+                body={"doc": data},
+                doc_as_upsert=True
+            )
+    except Exception as e:
+        print(f"Error processing message: {e}")
+
+
+def main():
+    """
+    Main function that connects to Redis and Elasticsearch,
+    processes messages, and handles potential errors.
+    """
+    try:
+        redis_client = connect_to_redis()
+        es_client = connect_to_elasticsearch()
+        process_messages(redis_client, es_client)
+        print(f"Successfully processed messages from {SOURCE_STREAM} to Elasticsearch index {INDEX_NAME}")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+
+
+if __name__ == "__main__":
+    main()
+
+=======
+
+
+import os
+import logging
+from dotenv import load_dotenv
+from elasticsearch import Elasticsearch
+import redis
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Get Redis and Elasticsearch credentials from environment variables
+REDIS_HOST = os.getenv("REDIS_HOST")
+REDIS_PORT = int(os.getenv("REDIS_PORT"))
+ELASTICSEARCH_HOST = os.getenv("ELASTICSEARCH_HOST")
+ELASTICSEARCH_PORT = int(os.getenv("ELASTICSEARCH_PORT"))
+ELASTICSEARCH_INDEX = "your_index_name"  # Replace with your index name
+
+# Initialize logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def main():
+    try:
+        # Connect to Redis
+        redis_client = redis.StrictRedis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+
+        # Subscribe to the Redis stream "collector"
+        stream_name = "collector"
+        last_id = "$"  # Start reading from the latest message
+        while True:
+            messages = redis_client.xread({stream_name: last_id}, count=10)
+            for _, message_list in messages:
+                for message_id, message_data in message_list:
+                    # Process each message
+                    try:
+                        # Assuming "_id" is a key in the message_data
+                        doc_id = message_data.get("_id")
+                        if doc_id:
+                            # Upsert record into Elasticsearch
+                            es_client = Elasticsearch([{"host": ELASTICSEARCH_HOST, "port": ELASTICSEARCH_PORT}])
+                            es_client.index(index=ELASTICSEARCH_INDEX, id=doc_id, body=message_data)
+                            logger.info(f"Upserted document with ID {doc_id} to Elasticsearch")
+                        else:
+                            logger.warning("Message does not contain '_id' field.")
+                    except Exception as e:
+                        logger.error(f"Error processing message: {e}")
+                    finally:
+                        last_id = message_id  # Update last processed message ID
+    except KeyboardInterrupt:
+        logger.info("Script terminated by user.")
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+
+if __name__ == "__main__":
+    main()
