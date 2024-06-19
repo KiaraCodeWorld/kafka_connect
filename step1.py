@@ -281,3 +281,103 @@ def main():
     # 1. List all files from yesterday's directory
     try:
         file_dataframe = list_s3_files(s3_client, S3_BUCKET_ROOT.split('/')[0], yesterday_directory)  
+
+
+============
+
+import os
+import pandas as pd
+import boto3
+from datetime import datetime, timedelta
+import uuid
+import json
+
+# Set environment variables
+S3_ACCESS_KEY_ID = os.environ.get('S3_ACCESS_KEY_ID')
+S3_SECRET_ACCESS_KEY = os.environ.get('S3_SECRET_ACCESS_KEY')
+S3_BUCKET_NAME = os.environ.get('S3_BUCKET_NAME')
+S3_ROOT_DIR = os.environ.get('S3_ROOT_DIR')
+
+# Create S3 client
+s3 = boto3.client('s3', aws_access_key_id=S3_ACCESS_KEY_ID, aws_secret_access_key=S3_SECRET_ACCESS_KEY)
+
+def get_s3_file_paths(date):
+   """
+   Retrieves the file paths from the S3 directory for the given date.
+   
+   Args:
+       date (datetime.date): The date for which to retrieve file paths.
+       
+   Returns:
+       pandas.DataFrame: A DataFrame containing the file paths and names.
+   """
+   prefix = f"{S3_ROOT_DIR}/{date.strftime('%Y%m%d')}/"
+   response = s3.list_objects_v2(Bucket=S3_BUCKET_NAME, Prefix=prefix)
+   
+   file_paths = [obj['Key'] for obj in response.get('Contents', [])]
+   file_names = [os.path.basename(path) for path in file_paths]
+   
+   file_dataframe = pd.DataFrame({'file_path': file_paths, 'file_name': file_names})
+   return file_dataframe
+
+def get_call_dataframe(date):
+   """
+   Retrieves the call data and agent roster data, joins them, and extracts relevant columns.
+   
+   Args:
+       date (datetime.date): The date for which to retrieve call data.
+       
+   Returns:
+       pandas.DataFrame: A DataFrame containing agent RACF, call date, and file name.
+   """
+   call_data_path = f"{S3_ROOT_DIR}/{date.strftime('%Y%m%d')}/call.csv"
+   agent_roster_path = f"{S3_ROOT_DIR}/{date.strftime('%Y%m%d')}/agent-roster.csv"
+   
+   call_data = pd.read_csv(f"s3://{S3_BUCKET_NAME}/{call_data_path}")
+   agent_roster = pd.read_csv(f"s3://{S3_BUCKET_NAME}/{agent_roster_path}")
+   
+   call_dataframe = call_data.merge(agent_roster, on='ID')
+   call_dataframe = call_dataframe[['agent_racf', 'call_date', 'file_name']]
+   
+   return call_dataframe
+
+def main():
+   """
+   Main function that orchestrates the data retrieval and processing.
+   """
+   try:
+       # Get the previous day's date
+       prev_date = datetime.now().date() - timedelta(days=1)
+       
+       # Get file paths and names
+       file_dataframe = get_s3_file_paths(prev_date)
+       
+       # Get call data and agent roster data
+       call_dataframe = get_call_dataframe(prev_date)
+       
+       # Join the dataframes
+       result_dataframe = file_dataframe.merge(call_dataframe, on='file_name', how='left')
+       
+       # Create Redis data stream records
+       records = []
+       for _, row in result_dataframe.iterrows():
+           record = {
+               'id': str(uuid.uuid4()),
+               'filename': row['file_name'],
+               'vendor': 'ACT',
+               's3_file_path': row['file_path'],
+               'agent_racf': row['agent_racf'],
+               'call_date': str(row['call_date'])
+           }
+           records.append(json.dumps(record))
+       
+       # Send records to Redis data stream
+       redis_client = # Create Redis client
+       redis_stream = redis_client.stream('gwas-recordings')
+       redis_stream.add(*records)
+       
+   except Exception as e:
+       print(f"Error occurred: {e}")
+
+if __name__ == "__main__":
+   main()
