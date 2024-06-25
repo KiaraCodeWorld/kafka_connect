@@ -87,3 +87,95 @@ if __name__ == '__main__':
     bucket_name = 'your-bucket-name'
     object_key = 'file.txt'
     local_file_
+
+
+import boto3
+import pandas as pd
+
+def list_files_in_s3(bucket_name, prefix=''):
+    """
+    List files in an S3 bucket.
+
+    Parameters:
+    - bucket_name: str : Name of the S3 bucket
+    - prefix: str : Prefix for the S3 keys (directory path)
+
+    Returns:
+    - list : List of file names
+    """
+    s3 = boto3.client('s3')
+    response = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
+    files = []
+    
+    for obj in response.get('Contents', []):
+        files.append(obj['Key'])
+    
+    return files
+
+def create_dataframe_from_s3(bucket_name, prefix=''):
+    """
+    Create a pandas DataFrame with a list of files from an S3 bucket.
+
+    Parameters:
+    - bucket_name: str : Name of the S3 bucket
+    - prefix: str : Prefix for the S3 keys (directory path)
+
+    Returns:
+    - pd.DataFrame : DataFrame containing the list of files
+    """
+    files = list_files_in_s3(bucket_name, prefix)
+    df = pd.DataFrame(files, columns=['File Names'])
+    return df
+
+# Example usage:
+bucket_name = 'your-bucket-name'
+prefix = 'your/prefix/path/'
+df = create_dataframe_from_s3(bucket_name, prefix)
+print(df)
+
+======
+
+import boto3
+import pandas as pd
+
+def list_files_in_s3(bucket_name, prefix=''):
+    """
+    List files in an S3 bucket.
+
+    Parameters:
+    - bucket_name: str : Name of the S3 bucket
+    - prefix: str : Prefix for the S3 keys (directory path)
+
+    Returns:
+    - list : List of file names
+    """
+    s3 = boto3.client('s3')
+    response = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
+    files = []
+    
+    for obj in response.get('Contents', []):
+        files.append(obj['Key'])
+    
+    return files
+
+def create_dataframe_from_s3(bucket_name, prefix=''):
+    """
+    Create a pandas DataFrame with a list of files from an S3 bucket.
+
+    Parameters:
+    - bucket_name: str : Name of the S3 bucket
+    - prefix: str : Prefix for the S3 keys (directory path)
+
+    Returns:
+    - pd.DataFrame : DataFrame containing the list of files
+    """
+    files = list_files_in_s3(bucket_name, prefix)
+    df = pd.DataFrame(files, columns=['File Names'])
+    return df
+
+# Example usage:
+bucket_name = 'your-bucket-name'
+prefix = 'your/prefix/path/'
+df = create_dataframe_from_s3(bucket_name, prefix)
+print(df)
+
