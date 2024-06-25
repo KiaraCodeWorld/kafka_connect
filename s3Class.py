@@ -89,50 +89,6 @@ if __name__ == '__main__':
     local_file_
 
 
-import boto3
-import pandas as pd
-
-def list_files_in_s3(bucket_name, prefix=''):
-    """
-    List files in an S3 bucket.
-
-    Parameters:
-    - bucket_name: str : Name of the S3 bucket
-    - prefix: str : Prefix for the S3 keys (directory path)
-
-    Returns:
-    - list : List of file names
-    """
-    s3 = boto3.client('s3')
-    response = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
-    files = []
-    
-    for obj in response.get('Contents', []):
-        files.append(obj['Key'])
-    
-    return files
-
-def create_dataframe_from_s3(bucket_name, prefix=''):
-    """
-    Create a pandas DataFrame with a list of files from an S3 bucket.
-
-    Parameters:
-    - bucket_name: str : Name of the S3 bucket
-    - prefix: str : Prefix for the S3 keys (directory path)
-
-    Returns:
-    - pd.DataFrame : DataFrame containing the list of files
-    """
-    files = list_files_in_s3(bucket_name, prefix)
-    df = pd.DataFrame(files, columns=['File Names'])
-    return df
-
-# Example usage:
-bucket_name = 'your-bucket-name'
-prefix = 'your/prefix/path/'
-df = create_dataframe_from_s3(bucket_name, prefix)
-print(df)
-
 ======
 
 import boto3
@@ -179,3 +135,53 @@ prefix = 'your/prefix/path/'
 df = create_dataframe_from_s3(bucket_name, prefix)
 print(df)
 
+========
+
+import boto3
+import pandas as pd
+from io import StringIO
+
+def read_csv_from_s3(bucket_name, file_key):
+    """
+    Read a CSV file from an S3 bucket and return a pandas DataFrame.
+
+    Parameters:
+    - bucket_name: str : Name of the S3 bucket
+    - file_key: str : Key of the CSV file in the S3 bucket
+
+    Returns:
+    - pd.DataFrame : DataFrame containing the CSV data
+    """
+    s3 = boto3.client('s3')
+    response = s3.get_object(Bucket=bucket_name, Key=file_key)
+    csv_content = response['Body'].read().decode('utf-8')
+    df = pd.read_csv(StringIO(csv_content))
+    return df
+
+def join_csv_files_from_s3(bucket_name, file_key1, file_key2):
+    """
+    Read two CSV files from an S3 bucket, create pandas DataFrames,
+    and join them on the 'id' column.
+
+    Parameters:
+    - bucket_name: str : Name of the S3 bucket
+    - file_key1: str : Key of the first CSV file in the S3 bucket
+    - file_key2: str : Key of the second CSV file in the S3 bucket
+
+    Returns:
+    - pd.DataFrame : DataFrame containing the joined data
+    """
+    # Read the CSV files from S3
+    df1 = read_csv_from_s3(bucket_name, file_key1)
+    df2 = read_csv_from_s3(bucket_name, file_key2)
+
+    # Join the DataFrames on the 'id' column
+    merged_df = pd.merge(df1, df2, on='id', how='inner')
+    return merged_df
+
+# Example usage:
+bucket_name = 'your-bucket-name'
+file_key1 = 'path/to/your/first.csv'
+file_key2 = 'path/to/your/second.csv'
+merged_df = join_csv_files_from_s3(bucket_name, file_key1, file_key2)
+print(merged_df)
