@@ -15,6 +15,24 @@ def log_message(log_level, message, date_format='%Y-%m-%d %H:%M:%S'):
     
     # Create the log message
     log_message = f"[{log_level}] {current_time}: {message}"
+
+def extract_filename_from_path(path):
+    """
+    Extract the filename from a given path using string manipulation.
+
+    Parameters:
+    - path: str : The file path
+
+    Returns:
+    - str : The extracted filename
+    """
+    return path.split('/')[-1]
+
+# Example usage:
+path = 'some/directory/structure/filename.ext'
+filename = extract_filename_from_path(path)
+print(filename)  # Output: filename.ext
+    
     
     # Print the log message
     print(log_message)
