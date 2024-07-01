@@ -1,0 +1,203 @@
+Write python code whcih reads from 2 redisstrams A and B, and depending on record-type runs the processifn functions in async mode and eventually writing to elasticsearch index 
+
+
+import asyncio
+import aioredis
+from aioelasticsearch import Elasticsearch
+
+# Define your Elasticsearch index name and mappings here
+ELASTICSEARCH_INDEX = "your_index_name"
+ELASTICSEARCH_MAPPING = {
+    "properties": {
+        "field1": {"type": "text"},
+        "field2": {"type": "integer"},
+        # Add more fields as per your requirements
+    }
+}
+
+async def process_record(record):
+    # Define your processing logic based on record type
+    record_type = record['type']
+    if record_type == 'type_A':
+        # Process type A record
+        processed_data = await process_type_A(record)
+    elif record_type == 'type_B':
+        # Process type B record
+        processed_data = await process_type_B(record)
+    else:
+        # Handle other record types as needed
+        return
+    
+    # Assuming processed_data is a dictionary containing fields to be indexed
+    await index_to_elasticsearch(processed_data)
+
+async def process_type_A(record):
+    # Your async processing logic for type A records
+    # Example: Extract necessary fields from record
+    data = {
+        "field1": record['field1'],
+        "field2": record['field2']
+    }
+    return data
+
+async def process_type_B(record):
+    # Your async processing logic for type B records
+    # Example: Transform data, etc.
+    data = {
+        "field1": record['field1'],
+        "field2": int(record['field2']) * 2  # Example transformation
+    }
+    return data
+
+async def index_to_elasticsearch(data):
+    # Initialize Elasticsearch client
+    async with Elasticsearch() as es:
+        # Create the index if it does not exist
+        if not await es.indices.exists(index=ELASTICSEARCH_INDEX):
+            await es.indices.create(index=ELASTICSEARCH_INDEX, body={"mappings": ELASTICSEARCH_MAPPING})
+        
+        # Index the document
+        await es.index(index=ELASTICSEARCH_INDEX, body=data)
+
+async def consume_from_redis_stream(stream_name):
+    # Initialize Redis connection
+    redis = await aioredis.create_redis_pool('redis://localhost')
+    
+    while True:
+        # Read from the stream
+        _, records = await redis.xread({stream_name: '$'}, count=1, block=0)
+        
+        for record in records:
+            # Process each record asynchronously
+            await process_record(record)
+    
+    # Close Redis connection
+    redis.close()
+    await redis.wait_closed()
+
+async def main():
+    # Start consuming from Redis streams A and B
+    task1 = asyncio.create_task(consume_from_redis_stream('stream_A'))
+    task2 = asyncio.create_task(consume_from_redis_stream('stream_B'))
+    
+    # Wait for tasks to complete
+    await asyncio.gather(task1, task2)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
+
+=========
+
+
+from aioredis import create_redis_pool
+from elasticsearch import AsyncElasticsearch
+from aioprocessing import Pool, ensure_future
+import asyncio
+
+# Redis connection details
+redis_host = "localhost"
+redis_port = 6379
+redis_stream_key_a = "stream_A"
+redis_stream_key_b = "stream_B"
+
+# Elasticsearch connection details
+es_host = "localhost"
+es_port = 9200
+es_index = "my_elastic_index"
+
+# Define process functions (replace with your actual logic)
+async def process_record_type_a(data):
+  # Process data of type A and prepare for Elasticsearch
+  processed_data_a = {"message": data["message_a"]}
+  await write_to_es(processed_data_a, es_index)
+
+async def process_record_type_b(data):
+  # Process data of type B and prepare for Elasticsearch
+  processed_data_b = {"message": data["message_b"]}
+  await write_to_es(processed_data_b, es_index)
+
+async def write_to_es(data, index):
+  # Connect to Elasticsearch and write data
+  async with es:
+    await es.index(index=index, body=data)
+
+async def read_from_streams(redis_pool, stream_key, process_func):
+  async with redis_pool.get() as conn:
+    while True:
+      # Read next message from the stream (blocks until message)
+      message = await conn.xread({stream_key: {"$": 1}}, count=1)
+      stream_name, messages = message[0]
+      message_id, data = messages[0]
+
+      # Process the message based on record type using async functions
+      data = eval(data)  # Assuming data is JSON encoded in Redis stream
+      if data["record_type"] == "A":
+        await ensure_future(process_func(data))
+      elif data["record_type"] == "B":
+        await ensure_future(process_func(data))
+      else:
+        print(f"Unknown record type: {data['record_type']}")
+
+      # Acknowledge the message after processing
+      await conn.xdel(stream_key, message_id)
+
+async def main():
+  # Create Redis connection pool
+  redis_pool = await create_redis_pool(host=redis_host, port=redis_port)
+
+  # Create async Elasticsearch client
+  es = AsyncElasticsearch([{"host": es_host, "port": es_port}])
+
+  # Create async tasks for reading from streams
+  tasks = [
+      read_from_streams(redis_pool, redis_stream_key_a, process_record_type_a),
+      read_from_streams(redis_pool, redis_stream_key_b, process_record_type_b)
+  ]
+
+  # Start and wait for all tasks to complete
+  await asyncio.gather(*tasks)
+
+  # Close connections
+  await redis_pool.close()
+  await es.close()
+
+if __name__ == "__main__":
+  asyncio.run(main())
+
+========
+
+import asyncio
+import redis
+from elasticsearch import Elasticsearch
+
+# Connect to Redis
+redis_client = redis.StrictRedis(host='localhost', port=6379, db=0)
+
+# Connect to Elasticsearch
+es = Elasticsearch(['http://localhost:9200'])
+
+# Define your processing functions
+async def process_record_a(record):
+    # Process record type A
+    # ...
+
+async def process_record_b(record):
+    # Process record type B
+    # ...
+
+async def process_records():
+    while True:
+        # Read records from Redis stream A
+        records_a = redis_client.xread({'A': '$'}, count=10)
+        for _, record in records_a:
+            await process_record_a(record)
+
+        # Read records from Redis stream B
+        records_b = redis_client.xread({'B': '$'}, count=10)
+        for _, record in records_b:
+            await process_record_b(record)
+
+# Run processing functions asynchronously
+loop = asyncio.get_event_loop()
+loop.run_until_complete(process_records())
