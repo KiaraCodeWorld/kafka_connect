@@ -1,0 +1,24 @@
+from elasticsearch import Elasticsearch
+
+es = Elasticsearch("http://localhost:9200")
+
+index_name = "FANTOM"
+mappings = {
+    "properties": {
+        "updated_at": {"type": "date"},
+        "created_at": {"type": "date"}
+    }
+}
+settings = {
+    "index.default_pipeline": "ingest_with_dates"
+}
+
+es.ingest.put_pipeline(
+    id="ingest_with_dates",
+    processors=[
+        {"set": {"field": "created_at", "value": "{{_ingest.timestamp}}"}},
+        {"set": {"field": "updated_at", "value": "{{_ingest.timestamp}}"}}
+    ]
+)
+
+es.indices.create(index=index_name, mappings=mappings, settings=settings)
