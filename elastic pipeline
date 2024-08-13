@@ -1,0 +1,17 @@
+{
+  "description": "Sets completed_flag to 'Y' if _a1, _b1, and _c1 are not null",
+  "processors": [
+    {
+      "set": {
+        "field": "completed_flag",
+        "value": "N"
+      }
+    },
+    {
+      "script": {
+        "lang": "painless",
+        "inline": "if (ctx._source._a1 != null && ctx._source._b1 != null && ctx._source._c1 != null) { ctx._source.completed_flag = 'Y' }"
+      }
+    }
+  ]
+}
