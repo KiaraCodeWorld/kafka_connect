@@ -1,3 +1,13 @@
+export HADOOP_CREDSTORE_PASSWORD=<keystorepassword>
+export HADOOP_CREDSTORE_PROVIDER_PATH=jceks://file/path/to/your.jceks
+
+# Retrieve the password
+password_alias="<password alias>"
+password=$(hadoop credential get $password_alias)
+
+================
+
+
 # Extract the password using 'openssl'
 password=$(openssl enc -d -aes-256-cbc -in "$keystore_file" -pass pass:"$keystore_password" | grep "$alias_name" | awk '{print $NF}')
 
@@ -26,3 +36,6 @@ alias_name="myalias"
 
 # Load the keystore
 ks=$(keytool -list -keystore "$keystore_file" -storetype jceks -storepass "$keystore_password")
+
+
+
