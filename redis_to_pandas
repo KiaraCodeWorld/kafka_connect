@@ -46,17 +46,15 @@ if __name__ == '__main__':
 
 ========
 
-import asyncio
-import aioredis
+import redis
 import pandas as pd
 
-async def read_from_redis_stream(redis_pool, stream_key):
-    async with redis_pool.get() as conn:
+def read_from_redis_stream(redis_pool, stream_key):
+    with redis_pool.get() as conn:
         while True:
             # Read next message from the stream (blocks until message)
-            message = await conn.xread({stream_key: {"$": 1}}, count=1)
-            stream_name, messages = message[0]
-            message_id, data = messages[0]
+            message = conn.xread({stream_key: {"$": 1}}, count=1)[0][1][0]
+            message_id, data = message
 
             # Process the message data
             data = eval(data)  # Assuming data is JSON encoded in Redis stream
@@ -65,22 +63,22 @@ async def read_from_redis_stream(redis_pool, stream_key):
             data_list.append(data)
 
             # Acknowledge the message after processing
-            await conn.xdel(stream_key, message_id)
+            conn.xdel(stream_key, message_id)
 
-async def main():
+def main():
     redis_host = "localhost"
     redis_port = 6379
     redis_stream_key = "your_redis_stream"
     csv_file_path = "output.csv"
 
     # Create Redis connection pool
-    redis_pool = await create_redis_pool(host=redis_host, port=redis_port)
+    redis_pool = redis.ConnectionPool(host=redis_host, port=redis_port)
 
     # Initialize a list to store data
     data_list = []
 
     # Start reading from the Redis stream
-    await read_from_redis_stream(redis_pool, redis_stream_key)
+    read_from_redis_stream(redis_pool, redis_stream_key)
 
     # Create a Pandas DataFrame from the list
     df = pd.DataFrame(data_list)
@@ -89,4 +87,4 @@ async def main():
     df.to_csv(csv_file_path, index=False)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
