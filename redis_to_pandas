@@ -88,3 +88,34 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+============
+
+import redis
+import pandas as pd
+
+# Connect to Redis
+r = redis.Redis(host='localhost', port=6379, db=0)
+
+# Read from Redis stream
+stream_name = 'mystream'
+records = []
+last_id = '0-0'
+
+while True:
+    response = r.xread({stream_name: last_id}, count=100, block=5000)
+    if not response:
+        break
+    for stream, messages in response:
+        for message_id, message in messages:
+            records.append(message)
+            last_id = message_id
+
+# Convert records to DataFrame
+df = pd.DataFrame(records)
+
+# Write DataFrame to CSV
+df.to_csv('output.csv', index=False)
+
+print("Data has been written to output.csv")
