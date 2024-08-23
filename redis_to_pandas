@@ -1,0 +1,92 @@
+import redis
+import pandas as pd
+
+# Initialize Redis connection
+redis_client = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
+
+# Name of the Redis stream
+stream_name = 'your_stream_name'
+
+# Read all records from the stream
+def read_stream(redis_client, stream_name):
+    records = []
+    try:
+        # 'XREAD' command to read from the stream
+        # The 'count' parameter limits the number of records retrieved
+        response = redis_client.xread({stream_name: '0'}, count=None, block=0)
+        for stream, messages in response:
+            for message_id, message in messages:
+                # Message is a list of tuples (field, value)
+                record = {field: value for field, value in message}
+                record['id'] = message_id
+                records.append(record)
+    except redis.exceptions.ResponseError as e:
+        print(f"Error reading from Redis stream: {e}")
+    return records
+
+# Convert records to DataFrame
+def records_to_dataframe(records):
+    if not records:
+        return pd.DataFrame()
+    return pd.DataFrame(records)
+
+# Save DataFrame to CSV
+def save_to_csv(df, file_name):
+    df.to_csv(file_name, index=False)
+
+# Main workflow
+if __name__ == '__main__':
+    records = read_stream(redis_client, stream_name)
+    df = records_to_dataframe(records)
+    if not df.empty:
+        save_to_csv(df, 'output.csv')
+        print('Records have been written to output.csv')
+    else:
+        print('No records found in the stream.')
+
+========
+
+import asyncio
+import aioredis
+import pandas as pd
+
+async def read_from_redis_stream(redis_pool, stream_key):
+    async with redis_pool.get() as conn:
+        while True:
+            # Read next message from the stream (blocks until message)
+            message = await conn.xread({stream_key: {"$": 1}}, count=1)
+            stream_name, messages = message[0]
+            message_id, data = messages[0]
+
+            # Process the message data
+            data = eval(data)  # Assuming data is JSON encoded in Redis stream
+
+            # Append data to a list for DataFrame creation
+            data_list.append(data)
+
+            # Acknowledge the message after processing
+            await conn.xdel(stream_key, message_id)
+
+async def main():
+    redis_host = "localhost"
+    redis_port = 6379
+    redis_stream_key = "your_redis_stream"
+    csv_file_path = "output.csv"
+
+    # Create Redis connection pool
+    redis_pool = await create_redis_pool(host=redis_host, port=redis_port)
+
+    # Initialize a list to store data
+    data_list = []
+
+    # Start reading from the Redis stream
+    await read_from_redis_stream(redis_pool, redis_stream_key)
+
+    # Create a Pandas DataFrame from the list
+    df = pd.DataFrame(data_list)
+
+    # Save the DataFrame to a CSV file
+    df.to_csv(csv_file_path, index=False)
+
+if __name__ == "__main__":
+    asyncio.run(main())
